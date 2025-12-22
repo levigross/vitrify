@@ -72,6 +72,15 @@ just test-paranoia-strict
 just test-verity
 ```
 
+## CI Policy (PR Approval)
+
+To prevent untrusted code execution, CI only runs PR workloads after explicit approval.
+
+- PRs run a minimal, no-checkout workflow by default.
+- A maintainer must apply the `safe-to-test` label to run CI against PR code.
+- Approval is required for forks and first-time contributors.
+- The labeled run checks out the PR head SHA with no persisted credentials.
+
 ## ISO Example
 
 Vitrify ships an example installer ISO built with the strictest defaults (paranoid paranoia level).
