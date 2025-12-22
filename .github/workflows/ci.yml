@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  schedule:
+    - cron: "0 3 * * *"
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  yaml-syntax:
+    name: yaml syntax
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request_target' || contains(github.event.pull_request.labels.*.name, 'safe-to-test')
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        if: github.event_name != 'pull_request_target'
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        if: github.event_name == 'pull_request_target'
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Validate YAML files
+        run: |
+          files="$(git ls-files '*.yml' '*.yaml')"
+          if [ -z "${files}" ]; then
+            echo "No YAML files found"
+            exit 0
+          fi
+          printf '%s\n' "${files}" | while IFS= read -r file; do
+            ruby -rpsych -e 'Psych.safe_load(File.read(ARGV[0]), permitted_classes: [], permitted_symbols: [], aliases: false)' "${file}"
+          done
+
+  check-fast:
+    name: just check-fast
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'safe-to-test')
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: DeterminateSystems/determinate-nix-action@95732e95d70db3ba1e0adc26a63c5e0375aba78c # v3.15.0
+      - run: nix develop -c just check-fast
+
+  flake-check:
+    name: nix flake check
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request_target' && !startsWith(github.ref, 'refs/tags/') && !(github.event_name == 'push' && github.actor == 'github-actions[bot]')
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: DeterminateSystems/determinate-nix-action@95732e95d70db3ba1e0adc26a63c5e0375aba78c # v3.15.0
+      - run: nix flake check
+
+  iso-strict:
+    name: build strict iso
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request_target' && !startsWith(github.ref, 'refs/tags/') && !(github.event_name == 'push' && github.actor == 'github-actions[bot]')
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: DeterminateSystems/determinate-nix-action@95732e95d70db3ba1e0adc26a63c5e0375aba78c # v3.15.0
+      - run: nix develop -c just iso-strict
+
+  bump-version:
+    name: bump version on merge
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - name: Detect merge commit
+        id: merge
+        run: |
+          parents="$(git rev-list --parents -n 1 "$GITHUB_SHA")"
+          count="$(echo "$parents" | wc -w | tr -d ' ')"
+          if [ "$count" -ge 3 ]; then
+            echo "merge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "merge=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Bump VERSION
+        if: steps.merge.outputs.merge == 'true'
+        run: |
+          if [ ! -f VERSION ]; then
+            echo "VERSION file not found" >&2
+            exit 1
+          fi
+
+          current="$(cat VERSION)"
+          IFS='.' read -r major minor patch <<< "${current}"
+          if [ -z "${major}" ] || [ -z "${minor}" ] || [ -z "${patch}" ]; then
+            echo "Invalid VERSION format: ${current}" >&2
+            exit 1
+          fi
+
+          patch=$((patch + 1))
+          next="${major}.${minor}.${patch}"
+          echo "${next}" > VERSION
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "Bump version to ${next} [skip ci]"
+          git push origin HEAD:main
+
+  release-iso:
+    name: release strict iso
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.ref, 'refs/tags/') && github.actor != 'github-actions[bot]')
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - name: Ensure tag exists (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          tag="${{ inputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists"
+          else
+            git tag -a "${tag}" -m "Release ${tag}"
+            git push origin "${tag}"
+          fi
+      - uses: DeterminateSystems/determinate-nix-action@95732e95d70db3ba1e0adc26a63c5e0375aba78c # v3.15.0
+      - run: nix develop -c just iso-strict
+      - run: |
+          iso_path="$(ls result/iso/*.iso)"
+          echo "ISO_PATH=${iso_path}" >> "$GITHUB_ENV"
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      - name: Sign ISO (keyless, GitHub OIDC)
+        run: |
+          cosign sign-blob "$ISO_PATH" --bundle "${ISO_PATH}.sigstore.json"
+          echo "ISO_SIGSTORE_BUNDLE=${ISO_PATH}.sigstore.json" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          files: |
+            ${{ env.ISO_PATH }}
+            ${{ env.ISO_SIGSTORE_BUNDLE }}

@@ -1,0 +1,16 @@
+name: PR (untrusted)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions: {}
+
+jobs:
+  pr-info:
+    name: awaiting approval
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain approval gate
+        run: |
+          echo "PRs run code only after a maintainer applies the 'safe-to-test' label."
