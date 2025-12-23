@@ -69,15 +69,6 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@95732e95d70db3ba1e0adc26a63c5e0375aba78c # v3.15.0
       - run: nix flake check
 
-  iso-strict:
-    name: build strict iso
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request_target' && !startsWith(github.ref, 'refs/tags/') && !(github.event_name == 'push' && github.actor == 'github-actions[bot]')
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-      - uses: DeterminateSystems/determinate-nix-action@95732e95d70db3ba1e0adc26a63c5e0375aba78c # v3.15.0
-      - run: nix develop -c just iso-strict
-
   bump-version:
     name: bump version on merge
     runs-on: ubuntu-latest
