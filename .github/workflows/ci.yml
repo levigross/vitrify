@@ -36,6 +36,12 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@95732e95d70db3ba1e0adc26a63c5e0375aba78c # v3.15.0
       - run: nix develop -c just iso-strict
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vitrify-iso-strict-${{ github.sha }}
+          path: result/iso/*.iso
+          if-no-files-found: error
 
   release-iso:
     name: release strict iso
