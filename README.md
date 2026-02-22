@@ -1,6 +1,6 @@
 # Vitrify
 
-[![CI](https://github.com/levigross/vitrify/actions/workflows/ci.yml/badge.svg)](https://github.com/levigross/vitrify/actions/workflows/ci.yml)
+[![Nightly](https://github.com/levigross/vitrify/actions/workflows/nightly.yml/badge.svg)](https://github.com/levigross/vitrify/actions/workflows/nightly.yml)
 
 Vitrify is a set of NixOS hardening modules that aim to reduce attack surface and improve integrity at the kernel, userspace, and storage layers. It is designed for systems where security trade-offs are acceptable and operational compatibility is a conscious choice.
 
